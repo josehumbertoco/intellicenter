@@ -132,7 +132,7 @@ class PoolWaterHeater(PoolEntity, WaterHeaterEntity, RestoreEntity):
     @property
     def min_temp(self):
         """Return the minimum value."""
-        return 5.0 if self._controller.systemInfo.usesMetric else 4.0
+        return 5.0 if self._controller.systemInfo.usesMetric else 40.0
 
     @property
     def max_temp(self):
