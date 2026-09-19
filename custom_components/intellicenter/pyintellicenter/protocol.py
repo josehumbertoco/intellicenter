@@ -1,12 +1,17 @@
 """Protocol for communicating with a Pentair system."""
 
 import asyncio
+import codecs
 import json
 import logging
 from queue import SimpleQueue
 
 _LOGGER = logging.getLogger(__name__)
 # _LOGGER.setLevel(logging.DEBUG)
+
+# a sane ceiling for a single message: past this the peer is not speaking the
+# protocol and we drop what we buffered rather than grow without bound
+MAX_LINE_LENGTH = 1024 * 1024
 
 # ---------------------------------------------------------------------------
 
@@ -19,8 +24,11 @@ class ICProtocol(asyncio.Protocol):
     - receiving data from the transport and combining it into a proper json object
     - managing a 'only-one-request-out-one-the-wire' policy
     this is more a "works better that way" thand a real requirement as far as know
-    - sending regular (every 10s) 'ping' requests and closing the connection if 'pong'
-    replies are not received fast enough (we allow 2 outstanding which is generous)
+
+    NOTE: the 'ping'/'pong' heartbeat this class used to implement was dropped
+    because firmware 1.064 stopped answering it. Liveness is now checked by the
+    controller, which probes the system with a regular request (see
+    BaseController._keepAlive).
     """
 
     def __init__(self, controller):
@@ -35,6 +43,10 @@ class ICProtocol(asyncio.Protocol):
 
         # buffer used to accumulate data received before splitting into lines
         self._lineBuffer = ""
+
+        # a message can be split across several TCP segments, possibly in the
+        # middle of a multi-byte character, so decode incrementally
+        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
         # state variable and queue for flow control
         # see sendRequest and responseReceived for details
@@ -56,26 +68,35 @@ class ICProtocol(asyncio.Protocol):
     def connection_lost(self, exc):
         """Handle the callback for connection lost."""
 
+        # nothing queued can be sent anymore, drop it so it is not held
+        # (and never retransmitted) by a protocol object about to be discarded
+        self._transport = None
+        while not self._out_queue.empty():
+            self._out_queue.get()
+        self._out_pending = 0
+
         self._controller.connection_lost(exc)
 
     def data_received(self, data) -> None:
         """Handle the callback for data received."""
 
-        data = data.decode()
+        data = self._decoder.decode(data)
         _LOGGER.debug(f"PROTOCOL: received from transport: {data}")
 
-        # "packets" from Pentair are organized by lines
-        # so wait until at least a full line is received
+        # "packets" from Pentair are organized by lines, and a single chunk of
+        # data can hold several of them, possibly followed by a partial one.
+        # Process every complete line and keep the remainder for the next chunk
+        # (waiting for the whole buffer to end on a separator would delay, or
+        # with a never completed trailing line lose, the lines before it)
         self._lineBuffer += data
+        *lines, self._lineBuffer = self._lineBuffer.split("\r\n")
 
-        if not self._lineBuffer.endswith("\r\n"):
-            return
-
-        # there might have been more than one "packet" in our current buffer
-        # so let's split them
-
-        lines = str.split(self._lineBuffer, "\r\n")
-        self._lineBuffer = ""
+        if len(self._lineBuffer) > MAX_LINE_LENGTH:
+            _LOGGER.error(
+                f"PROTOCOL: no message delimiter in {len(self._lineBuffer)} bytes,"
+                " discarding the buffer"
+            )
+            self._lineBuffer = ""
 
         for line in lines:
             if line:
@@ -95,6 +116,9 @@ class ICProtocol(asyncio.Protocol):
         return str(msg_id)
 
     def _writeToTransport(self, request):
+        if self._transport is None or self._transport.is_closing():
+            _LOGGER.debug(f"PROTOCOL: transport is gone, dropping: {request}")
+            return
         _LOGGER.debug(
             f"PROTOCOL: writing to transport: (size {len(request)}): {request}"
         )

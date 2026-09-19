@@ -1,9 +1,10 @@
 """Config flow for Pentair Intellicenter integration."""
 
+import asyncio
 import logging
 from typing import Any, Optional
 
-from homeassistant.config_entries import CONN_CLASS_LOCAL_PUSH, ConfigFlow
+from homeassistant.config_entries import ConfigFlow
 from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.typing import ConfigType
@@ -14,6 +15,9 @@ from .pyintellicenter import BaseController, SystemInfo
 
 _LOGGER = logging.getLogger(__name__)
 
+# a host that accepts the connection but never answers must not hang the flow
+CONNECT_TIMEOUT = 30
+
 
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
@@ -23,8 +27,6 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
     """Pentair Intellicenter config flow."""
 
     VERSION = 1
-
-    CONNECTION_CLASS = CONN_CLASS_LOCAL_PUSH
 
     def __init__(self):
         """Initialize a new Intellicenter ConfigFlow."""
@@ -130,13 +132,15 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
     async def _get_system_info(self, host: str) -> SystemInfo:
         """Attempt to connect to the host and retrieve basic system information."""
 
-        controller = BaseController(host, loop=self.hass.loop)
+        # no keepalive: this controller only lives for the duration of the probe
+        controller = BaseController(host, loop=self.hass.loop, keepAlive=False)
 
         try:
-            await controller.start()
+            async with asyncio.timeout(CONNECT_TIMEOUT):
+                await controller.start()
 
             return controller.systemInfo
-        except ConnectionRefusedError as err:
+        except (OSError, TimeoutError) as err:
             raise CannotConnect from err
         finally:
             controller.stop()

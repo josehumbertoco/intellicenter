@@ -59,7 +59,7 @@ async def async_setup_entry(
         heater: PoolObject
         for heater in heaters:
             # if the heater supports this body, add it to the list
-            if body.objnam in heater[BODY_ATTR].split(" "):
+            if body.objnam in (heater[BODY_ATTR] or "").split():
                 heater_list.append(heater.objnam)
         if heater_list:
             water_heaters.append(PoolWaterHeater(entry, controller, body, heater_list))
@@ -90,7 +90,7 @@ class PoolWaterHeater(PoolEntity, WaterHeaterEntity, RestoreEntity):
             extraStateAttributes=[HEATER_ATTR, HTMODE_ATTR],
         )
         self._heater_list = heater_list
-        self._lastHeater = self._poolObject[HEATER_ATTR]
+        self._lastHeater = self._poolObject[HEATER_ATTR] or NULL_OBJNAM
         self._attr_icon = "mdi:thermometer"
 
     @property
@@ -142,31 +142,47 @@ class PoolWaterHeater(PoolEntity, WaterHeaterEntity, RestoreEntity):
     @property
     def current_temperature(self):
         """Return the current temperature."""
-        return float(self._poolObject[LSTTMP_ATTR])
+        return self._temperature(LSTTMP_ATTR)
 
     @property
     def target_temperature(self):
         """Return the temperature we try to reach."""
-        return float(self._poolObject[LOTMP_ATTR])
+        return self._temperature(LOTMP_ATTR)
+
+    def _temperature(self, attribute_key):
+        """Return a temperature attribute as a number, None if we have none."""
+        value = self._poolObject[attribute_key]
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            # the system has not reported this temperature (yet)
+            return None
 
     def set_temperature(self, **kwargs):
         """Set new target temperatures."""
         target_temperature = kwargs.get(ATTR_TEMPERATURE)
         self.requestChanges({LOTMP_ATTR: str(int(target_temperature))})
 
+    def _heaterName(self, objnam):
+        """Return the name to show for a heater, never None."""
+        heater = self._controller.model[objnam]
+        # an operation list holding None breaks the frontend, and SNAME is not
+        # guaranteed to be defined
+        return (heater.sname if heater else None) or objnam
+
     @property
     def current_operation(self):
         """Return current operation."""
         heater = self._poolObject[HEATER_ATTR]
         if heater in self._heater_list:
-            return self._controller.model[heater].sname
+            return self._heaterName(heater)
         return STATE_OFF
 
     @property
     def operation_list(self):
         """Return the list of available operation modes."""
         return [STATE_OFF] + [
-            self._controller.model[heater].sname for heater in self._heater_list
+            self._heaterName(heater) for heater in self._heater_list
         ]
 
     def set_operation_mode(self, operation_mode):
@@ -175,7 +191,7 @@ class PoolWaterHeater(PoolEntity, WaterHeaterEntity, RestoreEntity):
             self._turnOff()
         else:
             for heater in self._heater_list:
-                if operation_mode == self._controller.model[heater].sname:
+                if operation_mode == self._heaterName(heater):
                     self.requestChanges({HEATER_ATTR: heater})
                     break
 
@@ -223,5 +239,8 @@ class PoolWaterHeater(PoolEntity, WaterHeaterEntity, RestoreEntity):
 
             if last_state:
                 value = last_state.attributes.get(self.LAST_HEATER_ATTR)
-                if value != NULL_OBJNAM:
+                # the attribute is absent from states restored before it was
+                # ever set: keep 'no heater' rather than storing None, which
+                # would later be sent to the system as a heater id
+                if value and value != NULL_OBJNAM:
                     self._lastHeater = value

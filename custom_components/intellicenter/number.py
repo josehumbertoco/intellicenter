@@ -16,7 +16,6 @@ from . import PoolEntity
 from .const import DOMAIN
 from .pyintellicenter import (
     BODY_ATTR,
-    BODY_TYPE,
     CHEM_TYPE,
     PRIM_ATTR,
     SEC_ATTR,
@@ -45,7 +44,7 @@ async def async_setup_entry(
             and obj.subtype == "ICHLOR"
             and PRIM_ATTR in obj.attributes
         ):
-            intellichlor_bodies = obj[BODY_ATTR].split(" ")
+            intellichlor_bodies = (obj[BODY_ATTR] or "").split()
             
             # Only create number entities for bodies that are actually configured
             for index, body_id in enumerate(intellichlor_bodies):
@@ -92,7 +91,12 @@ class PoolNumber(PoolEntity, NumberEntity):
     @property
     def native_value(self) -> float:
         """Return the current value."""
-        return self._poolObject[self._attribute_key]
+        value = self._poolObject[self._attribute_key]
+        try:
+            # everything is stored as strings in the model
+            return float(value)
+        except (TypeError, ValueError):
+            return None
 
     def set_native_value(self, value: float) -> None:
         """Update the current value."""

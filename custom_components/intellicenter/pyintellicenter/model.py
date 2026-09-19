@@ -25,7 +25,9 @@ class PoolObject:
     def __init__(self, objnam, params):
         """Initialize."""
         self._objnam = objnam
-        self._objtyp = params.pop(OBJTYP_ATTR)
+        # an object with no type is one we cannot place: addObject drops it
+        # rather than letting a single malformed entry abort the model load
+        self._objtyp = params.pop(OBJTYP_ATTR, None)
         self._subtyp = params.pop(SUBTYP_ATTR, None)
         self._properties = params
 
@@ -106,7 +108,7 @@ class PoolObject:
         for key in sorted(set(self._properties.keys())):
             value = self._properties[key]
             if type(value) is list:
-                value = "[" + ",".join(map(lambda v: f"{  {str(v)} }", value)) + "]"
+                value = "[" + ",".join(map(str, value)) + "]"
             result += f" {key}: {value}"
         return result
 
@@ -206,6 +208,9 @@ class PoolModel:
 
         if not object:
             object = PoolObject(objnam, params)
+            if not object.objtype:
+                _LOGGER.debug(f"ignoring object {objnam} with no {OBJTYP_ATTR}")
+                return None
             if object.objtype == "SYSTEM":
                 self._systemObject = object
             if object.objtype in self._attributeMap:
@@ -238,7 +243,13 @@ class PoolModel:
         """Update the state of the objects in the model."""
         updated = {}
         for update in updates:
-            objnam = update["objnam"]
+            # skip anything malformed rather than abort the batch: this also
+            # runs from start(), where raising would fail the whole connection
+            # and leave the reconnection loop retrying forever
+            objnam = update.get("objnam") if isinstance(update, dict) else None
+            if not objnam:
+                _LOGGER.debug(f"ignoring malformed update {update}")
+                continue
             object = self._objects.get(objnam)
             if object:
                 changed = object.update(update["params"])

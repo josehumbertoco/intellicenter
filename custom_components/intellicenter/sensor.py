@@ -215,19 +215,38 @@ class PoolSensor(PoolEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
-    def state(self) -> str:
-        """Return the state of the sensor."""
+    def native_value(self):
+        """Return the value of the sensor.
 
-        value = str(self._poolObject[self._attribute_key])
+        NOTE: this used to override `state` instead, which bypassed the unit
+        conversion SensorEntity performs while still letting it convert the
+        unit *label*: a system reporting Fahrenheit was displayed as Celsius
+        without the numbers ever being converted.
+        """
+
+        value = self._poolObject[self._attribute_key]
+
+        # None reports as unknown; returning it as a string would give the
+        # literal state "None", which a measurement sensor cannot make sense of
+        if value is None:
+            return None
+
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            # nothing we can do arithmetic on, hand it over untouched
+            _LOGGER.debug(f"non numeric value {value} for {self._attribute_key}")
+            return value
 
         # some sensors, like variable speed pumps, can vary constantly
         # so rounding their value to a nearest multiplier of 'rounding'
         # smoothes the curve and limits the number of updates in the log
 
         if self._rounding_factor:
-            value = str(int(round(int(value) / self._rounding_factor) * self._rounding_factor))
+            number = round(number / self._rounding_factor) * self._rounding_factor
 
-        return value
+        # keep whole numbers whole, so they don't start displaying as "82.0"
+        return int(number) if number == int(number) else number
 
     @property
     def native_unit_of_measurement(self) -> Optional[str]:

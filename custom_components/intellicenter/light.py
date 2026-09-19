@@ -62,9 +62,15 @@ async def async_setup_entry(
                 )
             )
         elif obj.isALightShow:
+            # a show only supports effects if every light it drives does;
+            # a member circuit missing from the model can't be assumed to
+            circuits = [
+                controller.model[child[CIRCUIT_ATTR]]
+                for child in controller.model.getChildren(obj)
+            ]
             supportColorEffects = reduce(
                 lambda x, y: x and y,
-                (controller.model[obj[CIRCUIT_ATTR]].supportColorEffects for obj in controller.model.getChildren(obj)),
+                (circuit is not None and circuit.supportColorEffects for circuit in circuits),
                 True,
             )
             lights.append(

@@ -1,5 +1,4 @@
 """Pentair IntelliCenter Integration."""
-import asyncio
 import logging
 from typing import Any, Optional
 
@@ -27,6 +26,7 @@ from .pyintellicenter import (
     CIRCGRP_TYPE,
     CIRCUIT_ATTR,
     CIRCUIT_TYPE,
+    EXTINSTR_TYPE,
     FEATR_ATTR,
     GPM_ATTR,
     HEATER_ATTR,
@@ -36,6 +36,7 @@ from .pyintellicenter import (
     LOTMP_ATTR,
     LSTTMP_ATTR,
     MODE_ATTR,
+    NORMAL_ATTR,
     PUMP_TYPE,
     PWR_ATTR,
     RPM_ATTR,
@@ -94,6 +95,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CIRCUIT_TYPE: {SNAME_ATTR, STATUS_ATTR, USE_ATTR, SUBTYP_ATTR, FEATR_ATTR},
         CIRCGRP_TYPE: {CIRCUIT_ATTR},
         CHEM_TYPE: {},
+        # without this the model drops every cover and the cover platform,
+        # which looks for EXTINSTR objects, never creates a single entity
+        EXTINSTR_TYPE: {SNAME_ATTR, STATUS_ATTR, NORMAL_ATTR},
         HEATER_TYPE: {SNAME_ATTR, BODY_ATTR, LISTORD_ATTR},
         PUMP_TYPE: {SNAME_ATTR, STATUS_ATTR, PWR_ATTR, RPM_ATTR, GPM_ATTR},
         SENSE_TYPE: {SNAME_ATTR, SOURCE_ATTR},
@@ -133,8 +137,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         @callback
         def disconnected(self, controller, exc):
             """Handle updates from the Pentair system."""
+            # systemInfo is still None if we never got through the handshake
+            systemInfo = controller.systemInfo
             _LOGGER.info(
-                f"disconnected from system: '{controller.systemInfo.propName}'"
+                "disconnected from system: "
+                f"'{systemInfo.propName if systemInfo else controller.host}'"
             )
             dispatcher.async_dispatcher_send(hass, self.CONNECTION_SIGNAL, False)
 
@@ -148,11 +155,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
         handler = Handler(controller)
 
-        await handler.start()
-
+        # register the handler before starting it: started() forwards the
+        # platform setups, and those look the handler up in hass.data
         hass.data.setdefault(DOMAIN, {})
-
         hass.data[DOMAIN][entry.entry_id] = handler
+
+        await handler.start()
 
         # subscribe to Home Assistant STOP event to do some cleanup
 
@@ -171,25 +179,20 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload IntelliCenter config entry."""
 
     # Unload entities for this entry/device.
+    # keep the handler around if that failed, the entry is still in use
 
-    all(
-        await asyncio.gather(
-            *[
-                hass.config_entries.async_forward_entry_unload(entry, platform)
-                for platform in PLATFORMS
-            ]
-        )
-    )
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
 
     # Cleanup
-    handler = hass.data[DOMAIN].pop(entry.entry_id, None)
+    handler = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
 
     _LOGGER.info(f"unloading integration {entry.entry_id}")
     if handler:
         handler.stop()
 
     # if it was the last instance of this integration, clear up the DOMAIN entry
-    if not hass.data[DOMAIN]:
+    if DOMAIN in hass.data and not hass.data[DOMAIN]:
         del hass.data[DOMAIN]
 
     return True
@@ -209,7 +212,7 @@ class PoolEntity(Entity):
         attribute_key=STATUS_ATTR,
         name=None,
         enabled_by_default=True,
-        extraStateAttributes=set(),
+        extraStateAttributes=None,
         icon: str = None,
         unit_of_measurement: str = None,
     ):
@@ -218,7 +221,7 @@ class PoolEntity(Entity):
         self._controller = controller
         self._poolObject = poolObject
         self._attr_available = True
-        self._extra_state_attributes = extraStateAttributes
+        self._extra_state_attributes = extraStateAttributes or set()
         self._attr_name = name
         self._attribute_key = attribute_key
         self._attr_entity_registry_enabled_default = enabled_by_default
@@ -252,12 +255,17 @@ class PoolEntity(Entity):
     def name(self):
         """Return the name of the entity."""
 
+        # SNAME is not always defined (an unnamed schedule for instance),
+        # fall back on the object id rather than returning None or,
+        # worse, raising while concatenating the suffix below
+        sname = self._poolObject.sname or self._poolObject.objnam
+
         if self._attr_name is None:
             # default is to return the name of the underlying pool object
-            return self._poolObject.sname
+            return sname
         elif self._attr_name.startswith("+"):
             # name is a suffix
-            return self._poolObject.sname + self._attr_name[1:]
+            return sname + self._attr_name[1:]
         else:
             return self._attr_name
 
