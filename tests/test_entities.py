@@ -95,6 +95,24 @@ def test_unique_ids_are_unique_within_each_domain():
         assert len(ids) == len(set(ids)), f"{name} has duplicate unique ids"
 
 
+def test_unique_id_scheme_is_pinned():
+    """The registry keys on these, so the recipe must not drift.
+
+    An entity tracking STATUS is ``<entry_id><objnam>``; anything else appends
+    its attribute key. Changing either orphans every installed entity.
+    """
+    _, _, entry, built = all_platforms()
+    body = by_object(built["switch"], "B1101")
+    assert body.unique_id == f"{entry.entry_id}B1101"
+    schedule = by_object(built["binary_sensor"], "SCH01")
+    assert schedule.unique_id == f"{entry.entry_id}SCH01ACT"
+    salt = by_object(built["sensor"], "CHL01", "SALT")
+    assert salt.unique_id == f"{entry.entry_id}CHL01SALT"
+    # the water heater has always appended LOTMP on top of the body id
+    pool = by_object(built["water_heater"], "B1101")
+    assert pool.unique_id == f"{entry.entry_id}B1101LOTMP"
+
+
 def test_unique_ids_do_not_depend_on_the_name():
     """Changing how an entity is named must not orphan it in the registry."""
     _, _, _, built = all_platforms()

@@ -2,7 +2,7 @@
 
 All notable changes to this integration are documented here.
 
-## Unreleased
+## 2.1.0 - 2026-09-19
 
 Bug fixes and robustness work across the connection layer and the entity
 platforms. No configuration changes are needed and no entities are renamed or

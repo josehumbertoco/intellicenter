@@ -15,7 +15,7 @@ and no build step.
 **Run the testbench after any change:**
 
 ```bash
-python3 tests/run.py          # 130 checks, no dependencies, ~15s
+python3 tests/run.py          # 133 checks, no dependencies, ~15s
 python3 tests/run.py -v       # name every check
 python3 tests/run.py protocol # only modules matching "protocol"
 ```

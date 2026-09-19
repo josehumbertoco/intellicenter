@@ -158,15 +158,40 @@ def test_diagnostics_dump_every_tracked_object():
 
 # -- packaging ---------------------------------------------------------------
 
-def test_manifest_is_valid_for_a_custom_integration():
+def test_manifest_declares_every_field_home_assistant_requires():
     manifest = json.loads((COMPONENT / "manifest.json").read_text())
-    assert manifest["domain"] == COMPONENT.name
+    for key in ("domain", "name", "codeowners", "documentation", "iot_class",
+                "requirements", "version"):
+        assert key in manifest, f"Home Assistant will refuse to load without {key}"
     assert manifest["config_flow"] is True
     assert manifest["iot_class"] == "local_push"
-    assert "version" in manifest, "custom integrations must declare a version"
     keys = list(manifest)
     assert keys[:2] == ["domain", "name"]
     assert keys[2:] == sorted(keys[2:]), "hassfest wants the rest alphabetical"
+
+
+def test_manifest_version_is_parsable():
+    """Home Assistant refuses to load a custom integration whose version it
+    cannot parse. SemVer (2.1.0) and CalVer (2026.9.0) both qualify."""
+    import re
+    version = json.loads((COMPONENT / "manifest.json").read_text())["version"]
+    semver = re.fullmatch(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?", version)
+    calver = re.fullmatch(r"\d{4}\.\d{1,2}(?:\.\d+)?", version)
+    assert semver or calver, f"{version!r} is not a parsable version"
+
+
+def test_the_domain_is_pinned():
+    """Changing the domain orphans every existing config entry and entity.
+
+    The entity registry keys on (domain, platform, unique_id), and the platform
+    is the integration's domain, so renaming it strands entities like
+    binary_sensor.lomas_pool_schedule behind unrecoverable ids.
+    """
+    manifest = json.loads((COMPONENT / "manifest.json").read_text())
+    assert manifest["domain"] == "intellicenter"
+    assert manifest["domain"] == COMPONENT.name, "folder and domain must agree"
+    from custom_components.intellicenter.const import DOMAIN as const_domain
+    assert const_domain == manifest["domain"]
 
 
 def test_every_declared_platform_has_a_module():
