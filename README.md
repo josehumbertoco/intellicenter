@@ -8,7 +8,7 @@
 ### From HACS
 
 1. Install HACS if you haven't already (see [installation guide](https://hacs.netlify.com/docs/installation/manual)).
-2. Add custom repository `https://github.com/dwradcliffe/intellicenter` as "Integration" in the settings tab of HACS.
+2. Add custom repository `https://github.com/josehumbertoco/intellicenter` as "Integration" in the settings tab of HACS.
 3. Find and install "Pentair Intellicenter" integration in HACS's "Integrations" tab.
 4. Restart your Home Assistant.
 5. 'Pentair Intellicenter' should appear thru discovery in your Home Assistant Integration's page
@@ -126,5 +126,5 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 [hacs]: https://github.com/hacs/integration
 [hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange
-[releases-shield]: https://img.shields.io/github/v/release/dwradcliffe/intellicenter
-[releases]: https://github.com/dwradcliffe/intellicenter/releases
+[releases-shield]: https://img.shields.io/github/v/release/josehumbertoco/intellicenter
+[releases]: https://github.com/josehumbertoco/intellicenter/releases

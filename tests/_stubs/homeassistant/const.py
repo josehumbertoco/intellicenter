@@ -17,5 +17,8 @@ class UnitOfTemperature(StrEnum):
     CELSIUS = "\u00b0C"
     FAHRENHEIT = "\u00b0F"
 
+class UnitOfRatio(StrEnum):
+    PARTS_PER_MILLION = "ppm"
+
 class UnitOfPower(StrEnum):
     WATT = "W"

@@ -2,6 +2,22 @@
 
 All notable changes to this integration are documented here.
 
+## 2.1.1 - 2026-09-22
+
+### Fixes
+
+- **Replaced the deprecated `CONCENTRATION_PARTS_PER_MILLION` constant** used by
+  the IntelliChlor salt sensor with `UnitOfRatio.PARTS_PER_MILLION`. Home
+  Assistant logged a deprecation warning for it and removes the old constant in
+  2027.8. Older Home Assistant releases without `UnitOfRatio` fall back to the
+  old constant. The unit string is still `ppm`, so the sensor, its history and
+  its statistics are unaffected.
+
+### Housekeeping
+
+- `manifest.json` (`codeowners`, `documentation`, `issue_tracker`) and the
+  README now point at this fork, `josehumbertoco/intellicenter`.
+
 ## 2.1.0 - 2026-09-19
 
 Bug fixes and robustness work across the connection layer and the entity
